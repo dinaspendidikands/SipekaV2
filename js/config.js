@@ -3,7 +3,7 @@
    GANTI API_URL dengan URL deploy Apps Script Anda (lihat README)
    ============================================================ */
 const CONFIG = {
-  API_URL: 'https://script.google.com/macros/s/AKfycbxP7Nwke355Ha1HKB_wzVv_q0oI8qXFZ64Qt7Yju24ZnebSfec0QBkZsZHSxpvFwHQaXQ/exec', // contoh: https://script.google.com/macros/s/AKfycb.../exec
+  API_URL: 'https://script.google.com/macros/s/AKfycbxoUgAajf0SqjBe0CpYuwQx7B_TUpWej8C0wIKpiHYBxD7OQFHQaFghCJ_2G9BRFKtX/exec', // contoh: https://script.google.com/macros/s/AKfycb.../exec
   VERSI: '1.0'
 };
 

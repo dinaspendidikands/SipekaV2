@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cetak Rapor — SIPEKA</title>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<header>
+  <div class="nav">
+    <a class="brand" href="index.html">
+      <div class="logo">DS</div>
+      <h1>SIPEKA Deli Serdang<small>Penilaian Kinerja Kepala Sekolah &amp; Guru</small></h1>
+    </a>
+    <nav><ul>
+      <li><a href="index.html">Beranda</a></li>
+      <li><a href="form-ks-sd-smp.html">KS SD/SMP</a></li>
+      <li><a href="form-ks-paud.html">KS PAUD</a></li>
+      <li><a href="form-guru.html">Guru</a></li>
+      <li><a href="rapor.html" class="aktif">Rapor</a></li>
+    </ul></nav>
+  </div>
+</header>
+<main>
+  <div class="tanpa-cetak">
+    <h2 class="judul-hal">🖨 Cetak Rapor</h2>
+    <p class="sub-hal">Cetak satu rapor, atau cetak banyak sekaligus: rapor kepala sekolah per <b>pengawas</b>, rapor guru per <b>kepala sekolah</b>. Satu rapor = satu halaman A4.</p>
+    <div id="pesan"></div>
+    <div class="kartu">
+      <div class="baris">
+        <div><label>Mode Cetak</label>
+          <select id="modeCetak">
+            <option value="satu">Cetak Satu Rapor</option>
+            <option value="banyak">Cetak Banyak Sekaligus</option>
+          </select></div>
+        <div><label>Jenis Rapor</label>
+          <select id="jenis">
+            <option value="sdsmp">Kepala Sekolah SD &amp; SMP</option>
+            <option value="paud">Kepala Sekolah PAUD/TK</option>
+            <option value="guru">Guru</option>
+          </select></div>
+        <div id="wKecamatan"><label>Kecamatan</label><select id="kecamatan"></select></div>
+        <div id="wSekolah"><label>Sekolah</label><select id="sekolah"></select></div>
+        <div id="wadahGuru" style="display:none"><label>Guru</label><select id="guru"></select></div>
+        <div id="wPengawas" style="display:none"><label>Nama Pengawas</label><select id="pengawas"></select></div>
+        <div id="wKS" style="display:none"><label>Nama Kepala Sekolah</label><select id="namaKS"></select></div>
+        <div><label>Bulan</label><select id="bulan"></select></div>
+        <div><label>Tanggal Rapor (untuk tanda tangan)</label><input id="tglRapor" placeholder="contoh: 12 Juni 2026"></div>
+        <div style="display:flex;align-items:flex-end;gap:.5rem">
+          <button class="btn btn-biru" id="tampil">Tampilkan</button>
+          <button class="btn btn-abu" id="cetak" style="display:none" onclick="print()">🖨 Cetak / PDF</button>
+        </div>
+      </div>
+      <div style="margin-top:.7rem" id="modeToggle"></div>
+      <p id="modeOffline" class="info info-kuning" style="display:none;margin-top:.6rem">📴 Mode offline — data diambil dari snapshot tarik data terakhir.</p>
+    </div>
+  </div>
+  <div id="hasil"></div>
+</main>
+<div id="notif"></div>
+<footer>© 2026 Dinas Pendidikan Kabupaten Deli Serdang — SIPEKA</footer>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="js/indikator.js"></script>
+<script src="js/config.js"></script>
+<script>
+(function () {
+  let masterSekolah = [], snapshot = null, pengaturan = PENGATURAN_DEFAULT;
+
+  async function init() {
+    pasangToggleMode($id('modeToggle'));
+    isiSelect($id('bulan'), BULAN_LIST);
+    $id('tglRapor').value = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+    snapshot = await Snapshot.muat().catch(() => null);
+    try {
+      masterSekolah = (await apiGet('master')).sekolah;
+    } catch (e) {
+      if (snapshot && snapshot.master) {
+        masterSekolah = snapshot.master.sekolah;
+        $id('modeOffline').style.display = 'block';
+      } else {
+        $id('pesan').innerHTML = '<div class="info info-merah">Tidak ada koneksi dan belum ada snapshot data offline. Hubungi admin untuk menarik data terlebih dahulu.</div>';
+        return;
+      }
+    }
+    pengaturan = await getPengaturan();
+    $id('modeCetak').onchange = aturTampilan;
+    $id('jenis').onchange = aturTampilan;
+    $id('kecamatan').onchange = isiSekolahSel;
+    $id('sekolah').onchange = isiGuruSel;
+    $id('tampil').onclick = tampilkan;
+    aturTampilan();
+  }
+
+  function sekolahTersaring() {
+    const j = $id('jenis').value;
+    return masterSekolah.filter(s => {
+      const up = String(s.jenjang).toUpperCase();
+      const isSDSMP = up === 'SD' || up === 'SMP';
+      return j === 'paud' ? !isSDSMP : (j === 'sdsmp' ? isSDSMP : true);
+    });
+  }
+  /* atur kolom pilihan sesuai mode cetak & jenis rapor */
+  function aturTampilan() {
+    const banyak = $id('modeCetak').value === 'banyak';
+    const guru = $id('jenis').value === 'guru';
+    $id('wKecamatan').style.display = banyak ? 'none' : '';
+    $id('wSekolah').style.display = banyak ? 'none' : '';
+    $id('wadahGuru').style.display = (!banyak && guru) ? '' : 'none';
+    $id('wPengawas').style.display = (banyak && !guru) ? '' : 'none';
+    $id('wKS').style.display = (banyak && guru) ? '' : 'none';
+    if (banyak) {
+      if (guru) {
+        isiSelect($id('namaKS'), [...new Set(masterSekolah.map(s => s.ks).filter(Boolean))].sort(), '— pilih kepala sekolah —');
+      } else {
+        isiSelect($id('pengawas'), [...new Set(sekolahTersaring().map(s => s.pengawas).filter(Boolean))].sort(), '— pilih pengawas —');
+      }
+    } else {
+      isiSelect($id('kecamatan'), [...new Set(sekolahTersaring().map(s => s.kecamatan))].sort(), '— pilih kecamatan —');
+      isiSelect($id('sekolah'), [], '—');
+    }
+    $id('hasil').innerHTML = ''; $id('cetak').style.display = 'none';
+  }
+  function isiSekolahSel() {
+    isiSelect($id('sekolah'),
+      sekolahTersaring().filter(s => s.kecamatan === $id('kecamatan').value).map(s => ({ value: s.npsn, label: s.sekolah })),
+      '— pilih sekolah —');
+    isiGuruSel();
+  }
+  async function isiGuruSel() {
+    if ($id('jenis').value !== 'guru' || $id('modeCetak').value === 'banyak') return;
+    const npsn = $id('sekolah').value;
+    let guru = [];
+    if (npsn) {
+      try { guru = (await apiGet('gurusekolah', { npsn })).guru.map(g => g.nama); }
+      catch (e) {
+        if (snapshot && snapshot.detail) {
+          const L = layoutGuru();
+          guru = [...new Set(snapshot.detail.guru.filter(r => String(r[L.id.npsn]).replace(/^'/,'') === npsn).map(r => r[L.id.nama]))];
+        }
+      }
+    }
+    isiSelect($id('guru'), guru, '— pilih guru —');
+  }
+
+  const sama = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+
+  /* ---------- ambil data: cetak satu ---------- */
+  async function ambilSatu() {
+    const p = { jenis: $id('jenis').value, npsn: $id('sekolah').value, bulan: $id('bulan').value };
+    if (p.jenis === 'guru') p.nama = $id('guru').value;
+    try {
+      const r = await apiGet('rapor', p);
+      return r.ditemukan ? (r.rows || [r.row]) : [];
+    } catch (e) {
+      if (!snapshot || !snapshot.detail) throw new Error('Offline dan snapshot tidak tersedia');
+      $id('modeOffline').style.display = 'block';
+      if (p.jenis === 'guru') {
+        const L = layoutGuru();
+        return snapshot.detail.guru.filter(r => String(r[L.id.npsn]).replace(/^'/,'') === p.npsn &&
+          String(r[L.id.bulan]) === p.bulan && sama(r[L.id.nama], p.nama));
+      }
+      const L = layoutKS(p.jenis);
+      const rows = p.jenis === 'paud' ? snapshot.detail.paud : snapshot.detail.sdsmp;
+      return rows.filter(r => String(r[L.id.npsn]).replace(/^'/,'') === p.npsn && String(r[L.id.bulan]) === p.bulan);
+    }
+  }
+  /* ---------- ambil data: cetak banyak ---------- */
+  async function ambilBanyak() {
+    const jenis = $id('jenis').value, bulan = $id('bulan').value;
+    const p = jenis === 'guru'
+      ? { jenis, bulan, ks: $id('namaKS').value }
+      : { jenis, bulan, pengawas: $id('pengawas').value };
+    try {
+      const r = await apiGet('raporbanyak', p);
+      return r.rows || [];
+    } catch (e) {
+      if (!snapshot || !snapshot.detail) throw new Error('Offline dan snapshot tidak tersedia');
+      $id('modeOffline').style.display = 'block';
+      let rows;
+      if (jenis === 'guru') {
+        const L = layoutGuru();
+        rows = snapshot.detail.guru.filter(r => sama(r[L.id.ks], p.ks) && String(r[L.id.bulan]) === bulan);
+        rows.sort((a, b) => String(a[L.id.nama]).localeCompare(String(b[L.id.nama])) || String(a[0]).localeCompare(String(b[0])));
+      } else {
+        const L = layoutKS(jenis);
+        rows = (jenis === 'paud' ? snapshot.detail.paud : snapshot.detail.sdsmp)
+          .filter(r => sama(r[L.id.pengawas], p.pengawas) && String(r[L.id.bulan]) === bulan);
+        rows.sort((a, b) => String(a[L.id.sekolah]).localeCompare(String(b[L.id.sekolah])) || String(a[0]).localeCompare(String(b[0])));
+      }
+      return rows;
+    }
+  }
+
+  function fmtWaktu(v) {
+    const d = new Date(v);
+    return isNaN(d) ? esc(String(v)) : d.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
+  }
+  /* daftar pilihan saat ada >1 pengisian (mode cetak satu) */
+  function renderPilihan(rows, terpilih) {
+    const jenis = $id('jenis').value;
+    let info = '';
+    rows.forEach((row, i) => {
+      let ket;
+      if (jenis === 'guru') {
+        const L = layoutGuru();
+        ket = `Rata ${f2(angka(row[L.colRataAll]))}%`;
+      } else {
+        const L = layoutKS(jenis);
+        ket = `Minggu ${esc(row[L.id.minggu])}` + (jenis === 'paud' ? '' : ` · ${esc(row[L.id.periode])}`);
+      }
+      info += `<tr ${i === terpilih ? 'style="background:#e6f5ee"' : ''}>
+        <td>${i + 1}</td><td>${fmtWaktu(row[0])}</td><td>${ket}</td>
+        <td><button class="btn ${i === terpilih ? 'btn-hijau' : 'btn-biru'}" style="padding:.35rem 1rem"
+          onclick="pilihPengisian(${i})">${i === terpilih ? '✔ Ditampilkan' : 'Tampilkan'}</button></td></tr>`;
+    });
+    return `<div class="kartu tanpa-cetak">
+      <div class="info info-kuning" style="margin-bottom:.7rem">⚠ Terdapat <b>${rows.length} pengisian</b> untuk
+        pilihan ini pada bulan ${esc($id('bulan').value)}. Pilih pengisian yang akan dicetak:</div>
+      <div style="overflow-x:auto"><table>
+        <tr><th style="width:36px">No</th><th>Waktu Pengisian</th><th>Keterangan</th><th style="width:140px">Aksi</th></tr>
+        ${info}</table></div></div>`;
+  }
+
+  let daftarRows = [];
+  window.pilihPengisian = function (i) {
+    const jenis = $id('jenis').value;
+    const r = jenis === 'guru' ? htmlRaporGuru(daftarRows[i], 's_') : htmlRaporKS(daftarRows[i], jenis, 's_');
+    $id('hasil').innerHTML = (daftarRows.length > 1 ? renderPilihan(daftarRows, i) : '') + r.html;
+    pasangQR(r.qr);
+    $id('cetak').style.display = '';
+  };
+
+  async function tampilkan() {
+    const banyak = $id('modeCetak').value === 'banyak';
+    const jenis = $id('jenis').value;
+    if (banyak) {
+      if (jenis === 'guru' && !$id('namaKS').value) return alert('Pilih nama kepala sekolah terlebih dahulu');
+      if (jenis !== 'guru' && !$id('pengawas').value) return alert('Pilih nama pengawas terlebih dahulu');
+    } else {
+      if (!$id('sekolah').value) return alert('Pilih sekolah terlebih dahulu');
+      if (jenis === 'guru' && !$id('guru').value) return alert('Pilih guru terlebih dahulu');
+    }
+    $id('hasil').innerHTML = '<div class="kartu tanpa-cetak" style="text-align:center"><span class="muat"></span> Mengambil data…</div>';
+    $id('cetak').style.display = 'none';
+    try { daftarRows = banyak ? await ambilBanyak() : await ambilSatu(); }
+    catch (e) { $id('hasil').innerHTML = `<div class="info info-merah">${esc(e.message)}</div>`; return; }
+    if (!daftarRows.length) {
+      $id('hasil').innerHTML = `<div class="info info-kuning">Belum ada penilaian untuk pilihan tersebut pada bulan ${esc($id('bulan').value)}.</div>`;
+      return;
+    }
+    banyak ? tampilBanyak() : pilihPengisian(daftarRows.length > 1 ? daftarRows.length - 1 : 0);
+  }
+
+  /* ---------- render cetak banyak: 1 rapor = 1 halaman ---------- */
+  function tampilBanyak() {
+    const jenis = $id('jenis').value;
+    const siapa = jenis === 'guru' ? 'Kepala Sekolah: ' + $id('namaKS').value : 'Pengawas: ' + $id('pengawas').value;
+    let html = `<div class="info info-hijau tanpa-cetak" style="max-width:880px;margin:0 auto 1rem">
+      🖨 <b>${daftarRows.length} rapor</b> siap dicetak — ${esc(siapa)} — Bulan ${esc($id('bulan').value)}.
+      Setiap rapor otomatis menjadi satu halaman A4.</div>`;
+    const semuaQR = [];
+    daftarRows.forEach((row, i) => {
+      const r = jenis === 'guru' ? htmlRaporGuru(row, 'b' + i + '_') : htmlRaporKS(row, jenis, 'b' + i + '_');
+      html += r.html;
+      semuaQR.push(...r.qr);
+    });
+    $id('hasil').innerHTML = html;
+    pasangQR(semuaQR);
+    $id('cetak').style.display = '';
+  }
+
+  /* ================= PEMBANGUN LEMBAR RAPOR ================= */
+  function bersih(v){ return String(v ?? '').replace(/^'/,''); }
+  function barisInfo(label, nilai) {
+    return `<tr><td>${esc(label)}</td><td>:</td><td>${esc(nilai ?? '-')}</td></tr>`;
+  }
+  function selLink(link) {
+    const ok = /^https?:\/\//.test(String(link));
+    return ok
+      ? `<a href="${esc(link)}" target="_blank" style="font-size:.7rem;word-break:break-all">${esc(String(link).slice(0,42))}…</a>`
+      : '<span style="color:#999">-</span>';
+  }
+  function pasangQR(daftar) {
+    daftar.forEach(q => {
+      if (/^https?:\/\//.test(q.link)) new QRCode($id(q.id), { text: q.link, width: 52, height: 52, correctLevel: QRCode.CorrectLevel.L });
+    });
+  }
+
+  /* ---------- rapor kepala sekolah (pre = awalan id QR unik) ---------- */
+  function htmlRaporKS(row, jenis, pre) {
+    const L = layoutKS(jenis);
+    const id = L.id;
+    const tahun = new Date().getFullYear();
+    let rataB = 0, rataT = 0, rataC = 0;
+    const n = L.ind.length;
+    L.ind.forEach(x => { rataB += angka(row[x.colB]); rataT += angka(row[x.colT]); rataC += angka(row[x.colC]); });
+    rataB /= n; rataT /= n; rataC /= n;
+    /* kategori capaian sengaja tidak ditampilkan di lembar cetak (rencana dimunculkan kembali) */
+    const m = masterSekolah.find(s => String(s.npsn) === bersih(row[id.npsn])) || {};
+    const tgl = $id('tglRapor').value.trim() || new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+    const qr = [];
+
+    let html = `<div class="lembar-rapor">
+      <div class="kop">
+        <h2>HASIL PENILAIAN KINERJA KEPALA SEKOLAH</h2>
+        <p>JENJANG ${jenis === 'paud' ? 'PAUD/TK' : 'SD &amp; SMP'} — DINAS PENDIDIKAN KABUPATEN DELI SERDANG — TAHUN ${tahun}</p>
+      </div>
+      <b>INFORMASI SEKOLAH</b>
+      <table style="border:none;border-collapse:collapse;margin:.2rem 0 .9rem;width:100%"><tr>
+        <td style="border:none;width:50%;padding:0;vertical-align:top">
+          <table class="tbl-info">
+            ${barisInfo('Jenjang', row[id.jenjang])}
+            ${barisInfo('Kecamatan', row[id.kecamatan])}
+            ${barisInfo('Nama Sekolah', row[id.sekolah])}
+            ${barisInfo('NPSN', bersih(row[id.npsn]))}
+          </table>
+        </td>
+        <td style="border:none;padding:0 0 0 .8rem;vertical-align:top">
+          <table class="tbl-info">
+            ${barisInfo('Kepala Sekolah', row[id.ks])}
+            ${barisInfo('No. HP', bersih(row[id.hpKS]))}
+            ${barisInfo('Pengawas', row[id.pengawas])}
+            ${barisInfo('No. HP', bersih(row[id.hpPengawas]))}
+            ${jenis === 'paud' ? '' : barisInfo('Periode', row[id.periode])}
+            ${barisInfo('Bulan', row[id.bulan] + ' — Minggu ' + row[id.minggu])}
+          </table>
+        </td></tr></table>
+      <b>HASIL PENILAIAN PER INDIKATOR</b>
+      <table style="margin-top:.3rem">
+        <tr><th style="width:28px">No</th><th style="width:42px">Kode</th><th>Indikator Penilaian</th>
+            <th>Baseline</th><th>Target</th><th>Capaian</th><th style="width:130px">Link Dokumentasi</th><th style="width:60px;text-align:center">QR</th></tr>`;
+    let no = 1;
+    L.kelompok.forEach(g => {
+      html += `<tr><td colspan="8" style="background:#dde7f2;font-weight:700">${esc(g.nama)}</td></tr>`;
+      g.indikator.forEach(indk => {
+        const x = L.ind[no - 1];
+        const link = String(row[x.colLink] || '');
+        const qid = pre + 'q' + (no - 1);
+        qr.push({ id: qid, link });
+        html += `<tr><td>${no}</td><td>${indk.kode}</td><td>${esc(indk.nama)}</td>
+          <td style="text-align:center">${esc(row[x.colB])}</td><td style="text-align:center">${esc(row[x.colT])}</td>
+          <td style="text-align:center">${esc(row[x.colC])}</td>
+          <td>${selLink(link)}</td><td><div class="qr-kecil" id="${qid}"></div></td></tr>`;
+        no++;
+      });
+    });
+    html += `<tr style="font-weight:700"><td colspan="3">Nilai Rata-Rata</td>
+        <td style="text-align:center">${f2(rataB)}</td><td style="text-align:center">${f2(rataT)}</td>
+        <td style="text-align:center">${f2(rataC)}</td><td colspan="2"></td></tr>
+      <tr style="font-weight:700"><td colspan="3">Kinerja (Capaian − Baseline)</td>
+        <td colspan="5" style="text-align:center">${f2(rataC - rataB)}</td></tr>
+      </table>
+      <p style="margin-top:.7rem"><b>Catatan dan Rekomendasi:</b><br>${esc(row[L.colCatatan] || '-')}</p>
+      <div class="ttd">
+        <div class="kolom">&nbsp;<br>Penilai,<br>Pengawas<div class="nama">${esc(row[id.pengawas])}</div>NIP. ${esc(m.nipPengawas || '………………………………')}</div>
+        <div class="kolom">${esc(row[id.kecamatan])}, ${esc(tgl)}<br>Yang dinilai,<br>Kepala ${esc(row[id.sekolah])}
+          <div class="nama">${esc(row[id.ks])}</div>NIP. ${esc(m.nipKS || '………………………………')}</div>
+      </div></div>`;
+    return { html, qr };
+  }
+
+  /* ---------- rapor guru ---------- */
+  function htmlRaporGuru(row, pre) {
+    const L = layoutGuru();
+    const id = L.id;
+    const tahun = new Date().getFullYear();
+    const nilai = L.colRata.map(c => angka(row[c]));
+    const rataAll = angka(row[L.colRataAll]);
+    const m = masterSekolah.find(s => String(s.npsn) === bersih(row[id.npsn])) || {};
+    const tgl = $id('tglRapor').value.trim() || new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+    const qr = [];
+
+    let html = `<div class="lembar-rapor">
+      <div class="kop">
+        <h2>RAPOR PENILAIAN KINERJA GURU</h2>
+        <p>DINAS PENDIDIKAN KABUPATEN DELI SERDANG — TAHUN ${tahun}</p>
+      </div>
+      <b>IDENTITAS GURU</b>
+      <table style="margin:.3rem 0 .9rem">
+        <tr><td style="width:34%">NAMA</td><td>${esc(row[id.nama])}</td></tr>
+        <tr><td>NIP/NUPTK</td><td>${esc(bersih(row[id.nip]))}</td></tr>
+        <tr><td>STATUS / PANGKAT-GOL. RUANG</td><td>${esc(row[id.status])} / ${esc(row[id.pangkat])}</td></tr>
+        <tr><td>UNIT KERJA</td><td>${esc(row[id.sekolah])} (${esc(row[id.kecamatan])})</td></tr>
+        <tr><td>MATA PELAJARAN / GURU KELAS</td><td>${esc(row[id.mapel])}</td></tr>
+        <tr><td>BULAN PENILAIAN</td><td>${esc(row[id.bulan])}</td></tr>
+      </table>
+      <b>HASIL OBSERVASI (PENGAMATAN/PEMANTAUAN)</b>
+      <table style="margin-top:.3rem">
+        <tr><th style="width:28px">No.</th><th>Observasi</th><th style="width:64px">Nilai (%)</th><th style="width:100px">Kategori</th><th>Tim Penilai</th><th style="width:120px">Bukti Dukung</th><th style="width:60px;text-align:center">QR</th></tr>`;
+    L.grup.forEach((g, gi) => {
+      const link = String(row[g.colLink] || '');
+      const qid = pre + 'g' + gi;
+      qr.push({ id: qid, link });
+      html += `<tr><td>${gi + 1}</td><td>${esc(g.nama)}</td>
+        <td style="text-align:center">${f2(nilai[gi])}</td>
+        <td>${esc(kategoriDari(nilai[gi], pengaturan.kategoriGuru))}</td>
+        <td style="font-size:.74rem">${esc(g.penilai)}</td>
+        <td>${selLink(link)}</td><td><div class="qr-kecil" id="${qid}"></div></td></tr>`;
+    });
+    html += `<tr style="font-weight:700"><td colspan="2">RATA-RATA PENILAIAN KINERJA GURU (%)</td>
+        <td style="text-align:center">${f2(rataAll)}</td>
+        <td colspan="4">${esc(kategoriDari(rataAll, pengaturan.kategoriGuru))}</td></tr></table>
+      <p style="margin-top:1rem;font-size:.8rem"><b>PERSETUJUAN</b><br>
+        Penilai dan guru yang dinilai menyatakan telah membaca dan memahami isi rapor penilaian kinerja ini
+        serta menyetujui hasil penilaian pada setiap indikator.</p>
+      <div class="ttd">
+        <div class="kolom">&nbsp;<br>Guru yang Dinilai,<div class="nama">${esc(row[id.nama])}</div></div>
+        <div class="kolom">${esc(row[id.kecamatan])}, ${esc(tgl)}<br>Kepala Sekolah,
+          <div class="nama">${esc(row[id.ks])}</div>NIP. ${esc(m.nipKS || '………………………………')}</div>
+      </div></div>`;
+    return { html, qr };
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>

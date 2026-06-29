@@ -15,6 +15,7 @@ form-ks-paud.html       [Login pengawas] Penilaian KS PAUD/TK (17 indikator, ska
 form-guru.html          [Login KS] Penilaian guru (checklist 0/1 + 7 survey skor 0–1)
 rapor.html              [Publik] Cetak rapor: satu / banyak (per pengawas / per KS), A4, QR
 hasil-penilaian.html    [Admin kecamatan / Admin Dinas] Hasil Penilaian + edit & hapus nilai KS & guru
+kelola-master.html      [Admin kecamatan / Admin Dinas] Tambah, edit & hapus MASTER_SEKOLAH & MASTER_GURU
 dashboard.html          [Admin] Chart, tertinggi/terendah, ranking baseline, tarik data, CSV
 admin.html              [Admin] Pengaturan kategori & baseline, generate/reset akun, password
 sw.js                   Service worker — cache offline (versi saat ini: sipeka-v14)
@@ -60,6 +61,7 @@ Data penilaian lama dari Google Form dapat **ditempel langsung** ke `KS_SD_SMP` 
 - Kiriman diautentikasi **kunci akun permanen** → antrean offline tetap valid dikirim kapan pun.
 - **Akun admin kecamatan** (username = **nama kecamatan**, boleh diketik tanpa spasi saat login): generate massal per kecamatan unik di master; membuka halaman **Hasil Penilaian** berisi seluruh pengisian KS PAUD/SD&SMP dan guru se-kecamatannya, dan dapat **mengedit nilai, link dokumentasi & catatan**, serta **menghapus** data pengisian (identitas tidak bisa diubah; rata & kinerja dihitung ulang server; kepemilikan kecamatan divalidasi server; hapus selalu dikonfirmasi).
 - **Admin Dinas** juga dapat membuka **Hasil Penilaian** (menu di Dashboard/Pengaturan) untuk **semua kecamatan** — pilih kecamatan dari dropdown, lalu lihat/edit/hapus datanya tanpa batasan kepemilikan.
+- **Kelola Data Master** (`kelola-master.html`): Admin kecamatan dapat **menambah, mengedit, dan menghapus** baris `MASTER_SEKOLAH` & `MASTER_GURU` di kecamatannya (kecamatan guru ditentukan dari NPSN sekolahnya; NPSN dikunci saat edit; kecamatan terkunci ke wilayah akun). Admin Dinas dapat mengelola master **semua kecamatan** via dropdown. Penghapusan dikonfirmasi dan diperingatkan bila masih ada data penilaian/guru terkait. Kepemilikan kecamatan divalidasi server pada setiap aksi; semua tulis memakai `LockService`.
 
 ## 6. Login Admin & Pengaturan
 
